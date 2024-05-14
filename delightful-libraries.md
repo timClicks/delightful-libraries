@@ -1,20 +1,18 @@
-# Advice for writing software libraries in Rust
+# Writing delightful software libraries in Rust
 
-- Author: Tim McNamara, @timClicks. <tim@mcnamara.nz>
-- Licence: CC-BY-SA 4.0
-- Version: 0.0.0
-- Status: VERY INCOMPLETE
-
+- **Author**: Tim McNamara, @timClicks. <tim@mcnamara.nz>
+- **Licence**: CC-BY-SA 4.0
+- **Version**: 0.0.0
+- **Status**: VERY INCOMPLETE
 
 :::info
 This document has been created as part of my Rust Fellowship for the June 2023-2024 year. Thank you to all of the sponsors who have provided financial support for the program and to the foundation for facilitating it. 
 :::
-
 # Introduction
 
 If you're writing a library, then you are writing software to be helpful. You're absorbing the cost of writing code and relieving that burden from others. Thank you.
 
-You should expect that people see your software as a risk. Every dependency adds some weight to their project. Your primary goal is to provide a good first impression. Although this seems superficial, to create a good first impression, everything needs to be in place.
+You should expect that people see your software as a risk. Every dependency adds some weight to their project. Therefore, an important responsibility is to provide a good first impression. Although this seems superficial, to create a good first impression, everything needs to be in place.
 
 Most developers that use your crate will be novice Rust programmers. This is likely to remain so for many years. Rust is growing very rapidly. This means that there will always be a large cohort of users who will get stuck.
 
@@ -32,8 +30,17 @@ It's true that Cargo enforces semantic versioning. However it's also true that, 
 
 Another aspect of Rust's semantic versioning culture is that it's very hard for projects to reach 1.0. Once they're there, it's very difficult to reach the next major version.
 
-If you have a popular library, there is little political capital for you to introduce breaking changes.
+Another quirk about how semantic versioning is adopted in practice is that a major version change *implies* breaking changes. The spec is a little more flexible.
 
+Generally speaking, it's better to spend too long on pre-1.0 rather than impose breaking changes.
+
+If you have a popular library, making breaking changes imposes significant costs on your user base. You'll need to invest political capital for you make this change.  Be conscious with your design decisions.
+
+# Types of libraries
+
+## data structures
+
+## client libraries
 
 # Documentation
 
@@ -48,18 +55,56 @@ The general advice about written communication also applies to technical documen
 When writing, consider the audience's needs. A common problem is expert blindness. We forget what things look like as a beginner. Because we know the tools so well, we don't need to consciously think about which steps we need to take, therefore it's hard to explicitly state every step.
 
 Ask others to read through your tutorial. If you're feeling brave, you can also do this over a video call to get immediate feedback about things that are confusing.
+
+## Design and Architecture
+
+You should generally use dedicated site, perhaps generated with [mdBook], for describing design documentation.
+
+[mdBook]: https://github.com/rust-lang/mdBook
+
 ## Reference
 
-API documentation is a n
+I dislike silly or cute examples because use they often rely on cultural idioms. Most of your readers won't share that cultural context. Therefore, it's unlikely that they'll have the intended effect. However, there's a strong argument to me made that you should feel empowered to do whatever you want. As long as you're deliberate, and the tone of the examples matches the tone of the rest of the project, then you can have fun.
 
-I dislike cute examples because they often . Likewise, using Foo and Barr as variable names 
-## tutorial
+Try to avoid overused tropes.
 
-A tutorial introduction is often appreciated. This will guide people through the process of what setup needs to occur (e.g. )
+Animal, Cat and Dog. Employee, Department, Customer. Products.
 
-Examples: `regex`, `clap`, and a number of parsing libraries such as [`chumsky`]
+Foo, Bar, and Baz as variable names.
 
-`regex`: 
+## Tutorial
+
+A tutorial introduction is often appreciated. This will guide people through the process of what setup needs to occur and give them a good feel for the important steps that they'll need to follow to be productive.
+
+Dedicated websites generated with [mdBook] are common. mdBook is a command-line tool that is essentially a static-site generator, with special support for Rust "code fences". mdBook can test all of the examples to ensure that they work.
+
+```markdown
+# whatevs
+
+We are documenting our library.
+
+,,,rust
+use lib;
+
+fn main() {
+
+} 
+,,,
+
+This will be printed as HTML.
+
+```
+
+The `clap` project bundles its tutorial into the main repository, hidden behind a feature flag. This ensures that the tutorial is available on docs.rs. 
+
+If your project involves introducing a paradigm, you may also
+
+
+
+Examples: `regex`, `clap`, and a number of parsing libraries such as [`chumsky`], [lalrprop]
+
+[mdBook]: https://rust-lang.github.io/mdBook/
+[`regex`]: https://github.com/rust-lang/regex
 [`chumsky`]:  https://github.com/zesterer/chumsky/blob/main/tutorial.md
 
 Writing effective tutorials is very difficult. To start with, you're likely to underestimate the task at hand because they're superficially easy. Tutorials "just" describe how to use the tool while you're starting.
@@ -194,8 +239,19 @@ all-features = true
 ```
 
 ### Feature flags
+Use feature flags liberally, but hold off adding them until your library has become fairly stable. Otherwise they'll become another distraction for your team.
 
+You do need to document what each feature does, however. 
 
+It may be better to create multiple crates. 
+
+### rustc codegen options
+
+As a general point, if you're digging into these sorts of options, then you should have significant knowledge about your compile targets. The defaults should generally be "good enough".
+
+https://doc.rust-lang.org/rustc/codegen-options/index.html#panic
+
+Set `+crt-static` to enable forwards-compatibility. It's likely that the Rust project will adjust its defaults to use dynamic linking under Musl.
 
 ### Release profile
 Cargo supports the notion of a "profile". Each profile has a different configuration settings.
@@ -205,21 +261,62 @@ In general, the release profile takes the most time to compile, but programs tha
 Recommended settings.
 
 ```toml
+# dev - intended for development
 [profile.dev]
-opt-level = 3
+opt-level = 2
 
+# release - intended for public distribution
+# 
+# This profile produces a very fast executable, at the cost of
+# significantly slower compilation speed and increased memory
+# requirements.
+# 
+# Note: to enable cross-language link-time optimization (LTO),
+#       the linker plugin needs to be provided via RUSTFLAGS
 [profile.release]
-opt-level = 3
-debug = true
-lto = "thin" # consider 1,
+codegen-units = 1
+lto = true
+strip = true
 panic = "abort"
+
+# release-internal - intended for internal distribution
+# 
+# This profile is intended for user-acceptance testing, 
+# auditing, and other internal uses. 
+[profile.release-internal]
+codegen-units = 16
+lto = "thin"
+strip = false
+debug = true
+incremental = true
 ```
 
-- `debug` symbols are very useful when you need them. Consider 
+Some comments.
 
-#### Consider a "dist" profile for public distribution
+- `codegen-units = 1` is very expensive. It reduces removes parallelism.
+- `panic = "abort"` may be too abrupt. However, it's intended purpose is error recovery, and users of your library are unlikely to be able to recover from errors that occur in your code.
+- `debug` symbols are very useful when you need them.
+
+#### Consider an additional profile to distinguish public or internal distribution
+
+If your company has a quality assurance step before any public builds are made, or wishes to create, consider creating a Cargo profile for that purpose. An alternative strategy is to create a profile for public releases. The 
 
 If you're creating a version of your library for public consumption, and your code isn't open source, then you may wish to create a dedicated build profile for distribution.
+
+```toml
+# dist - intended for public distribution
+# 
+# This profile produces a very fast executable, at the cost of
+# significantly slower compilation speed and increased memory
+# requirements.
+[profile.dist]
+inherits = "release"
+debug = false
+codegen-units = 1
+lto = true
+```
+
+> Note: the `cargo-dist` command a
 
 Cargo profile. Consider LTO. For gather data, you need profiling and benchmarks.
 
@@ -311,6 +408,7 @@ pub unsafe fn _public_for_testing_only() {
 
 ## Technique: making it impossible to call an internal method, aka sealing a trait
 
+Here's some code seen in the wild:
  
 ```rust
 /// DO NOT CALL THIS.
@@ -332,6 +430,11 @@ pub unsafe fn _clear_cache() {
 ref: https://github.com/anderslanglands/ustr/blob/10a780a01196df9fa9d240bb0dcb14aae364a416/src/lib.rs#L416C22-L429C22
 
 # Projects
+
+## rand_xorshift
+
+Reference implementation: https://crates.io/crates/rand_xorshift
+
 
 ## Arc\<T> vs Box\<T>
 
@@ -428,11 +531,25 @@ If you're a professional developer within a large enterprise, the expectations a
 
 You also have many more resources though, so hopefully things even out. One of the advantages you will have is access to more compute resources. Ensure that your testing setup is robust.
 
-Consider advanced approaches, such as property-based testing, fuzzing and mutation testing.
+Consider advanced approaches, such as property-based testing (`quickcheck` and `proptest`), model checking (Kani) fuzzing, [snapshot testing] and [mutation testing].
+
+[`proptest`]: https://github.com/proptest-rs/proptest
+[mutation testing]: https://mutants.rs/
+[snapshot testing]: https://docs.rs/insta/
+
+## Leadership buy-in is required
+
+As your library grows, you'll need to support it. This will require dedicated time. Someone will need to fund that .
+
+1.0 will be perceived as an indicator of quality assurance.
+
+If your company has a heavy metrics culture, being an open source maintainer is difficult sell in the promo pack. 
 
 ## project management
 
 Lots of the difficulty in open source relates to the mechanics of getting people to work together. Coordination is very difficult. Open source spans many boundaries, such as organisational and cultural.  
+
+Developing an open source library means exposing some non-zero proportion of your company's communication to public view.
 
 ## create a public face
 
@@ -485,14 +602,45 @@ Consider the licencing of your documentation. It's conventional, but not compuls
 
 Perhaps the small code examples in your documentation should be licensed under a much more liberal licence, say BSD-0.
 
-## Limit exporting others crates 
+### Make sure that your library's metadata is machine-readable
 
+While it can feel tiresome, it's a very good idea to sure that your project's metadata in its manifest (Cargo.toml) is complete and accurate.
 
-Practicality can be 
+SPDX identifiers.
 
-## Minimum stable Rust version
+### Limit exporting others' crates 
 
+If you're working in the networked services domain space, one of the biggest decisions that you'll need to make is whether to attempt to stay neutral to async runtimes or to fold into Tokio. 
 
+Other libraries have a similar decision relating to serialization. It's somewhat easy say that [`serde`] is the dominant player in that area, so it's a sensible choice to rely on it. However, serde is a general-purpose serialization system that provides flexibility at the expense of performance. It's conceivable that it may be replaced over time.
+
+Both of these cases are examples of a broader issue. Should you tie your project to your dependencies? That is, if you expose a dependency's traits/types in your public API, then you're stuck with them until your next major release. This can be a concern if you don't have control.
+
+Pragmatism can be instructive here. AWS decided to require Tokio and serde when it released version 1.0 of its Rust SDK.
+
+Many crates provide a `serde` feature flag.
+
+```rust
+#[cfg(feature="serde1")] use serde::{Serialize, Deserialize};
+
+#[derive(Clone, PartialEq, Eq)]
+#[cfg_attr(feature="serde1", derive(Serialize,Deserialize))]
+pub struct Greeting {
+    name: String,
+}
+```
+
+[`serde`]: htps://serde.rs
+
+## Minimum stable Rust version (MSRV)
+
+Avoid advertising a MSRV until your project establishes some maturity.
+
+When considering MSRV, consider your target platforms. You may wish to ensure that your project will build natively on your intended platform. Maintaining a cross-compilation toolchain can be trickier than it looks.
+
+"Our minimum version is whatever is available on Debian stable" is one way to break the deadlock.
+
+Your internal teams might ask you to support a very old version of Rust. Over time, this will place an increasing burden on you. Your dependencies will eventually move towards the present, and you'll be stuck in the past. This will limit your ability to apply security patches and other critical upgrades. Therefore, you might expend fewer resources by assisting them to upgrade to a current version of Rust, rather than keeping your library working with the old one.
 
 ## details to add
 
@@ -641,6 +789,16 @@ Hints that we're not doing the right thing.
 
 
 ## Case studies
+
+### Random number generation
+
+- [`rand_core`]
+- [`rand`]
+- [`rand_xorshift`]
+
+[`rand_core`]: https://docs.rs/rand_core/latest/rand_core/index.html
+[`rand_xorshift`]: : https://docs.rs/rand_xorshift
+
 ### tera
 https://github.com/Keats/tera/tree/master
 fuzzing 
