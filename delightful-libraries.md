@@ -8,6 +8,7 @@
 :::info
 This document has been created as part of my Rust Fellowship for the June 2023-2024 year. Thank you to all of the sponsors who have provided financial support for the program and to the foundation for facilitating it. 
 :::
+
 # Introduction
 
 If you're writing a library, then you are writing software to be helpful. You're absorbing the cost of writing code and relieving that burden from others. Thank you.
@@ -36,11 +37,49 @@ Generally speaking, it's better to spend too long on pre-1.0 rather than impose 
 
 If you have a popular library, making breaking changes imposes significant costs on your user base. You'll need to invest political capital for you make this change.  Be conscious with your design decisions.
 
+# Rust concepts to have good understanding of
+
+- trait system as basis, e.g. Sized
+- memory model & ownership: registers/stack/heap/static
+- Result, Option, std::error::Error
+- smart pointers
+- interior mutability; Cell vs RefCell
+- mutable global state (incl. in an async context)
+- how async actually works, e.g. `Future` trait
+
+
 # Types of libraries
 
 ## data structures
 
 ## client libraries
+
+
+## Foundational ecosystem crates
+
+Some library crates exist primarily as a way to expose traits to the world. Often this produces an ecosystem of libraries that work well together.
+
+- The [log crate] doesn't actually provide logging. It provides facilities for other crates to do logging. RUST_LOG
+- The [rand crate] provides central traits, including`Rng` and `SeedableRng`. It also re-exports several implementations of those traits provided by additional crates behind feature flags.
+- The geospatial community maintains the [geo crate], which can describe what geometries such as what a "point", "line" or a "polygon" mean.
+
+[rand crate]: https://crates.io/crates/rand
+[log crate]: https://crates.io/crates/log
+[geo crate]: https://crates.io/crates/geo
+
+This pattern occurs largely due to the orphan rule and partially due to cultural norms.
+
+<!--
+Occasionally, this becomes an issue. 
+
+Because of its centrality within the ecosystem, futures/0.3 is now the de facto futures/1.0.
+
+ Serialization has generally become synonymous with the serde crate's `Serialize` and `Deserialize` traits. Serde is a relatively expensive dependency to bring in though, as it uses lots of compile-time macros to enable serialization of all of Rust's primitive types. When your crate doesn't need all of that functionality, you still pay for all of it. Arguably, a more neutral set of traits could be created that exists outside of any given serialization system. Serde's traits are not a good fit for this model, because they're heavily tied to the visitor pattern. 
+ -->
+
+# Versioning
+
+The Rust community practices semantic versioning, enforced through its build tool cargo and strong community norms.
 
 # Documentation
 
@@ -112,6 +151,7 @@ Writing effective tutorials is very difficult. To start with, you're likely to u
 Tutorials are challenging to keep up-to-date. It's rare to see software teams rigorously check that their tutorials are still current.
 
 Perhaps add an item in your release process to check the tutorial when releasing minor versions?
+
 ## software as poetry
 
 Software projects are creative endeavour. It is subject to many of the same social pressures as other things that people produce, including fashion and trends.
@@ -186,13 +226,13 @@ impl From<io::Error> for Error {
 }
 ```
 
-
 This can be greatly simplified. Use [`thiserror`] to a) enable your own "error codes" and b) to wrap upstream errors.
 
 Error types should try to stay small. They're used in many code paths and can be surprisingly bulky.
 
 
 [`thiserror`]: https://crates.io/crates/thiserror
+
 ### Diagnostics
 
 If you need to provide users with error messages relating to the input that they're providing, then you should consider pulling in a library that can annotate text with the location of errors as well as providing hints. 
@@ -239,6 +279,7 @@ all-features = true
 ```
 
 ### Feature flags
+
 Use feature flags liberally, but hold off adding them until your library has become fairly stable. Otherwise they'll become another distraction for your team.
 
 You do need to document what each feature does, however. 
@@ -297,49 +338,54 @@ Some comments.
 - `panic = "abort"` may be too abrupt. However, it's intended purpose is error recovery, and users of your library are unlikely to be able to recover from errors that occur in your code.
 - `debug` symbols are very useful when you need them.
 
+<!--
+@predrag
+
+> panic = "abort"
+ 
+I would heavily qualify this recommendation. It may break some libraries, and it probably isn't a good fit for beginners who might not be in a good position to diagnose and debug that breakage.
+
+-->
+
+
 #### Consider an additional profile to distinguish public or internal distribution
 
-If your company has a quality assurance step before any public builds are made, or wishes to create, consider creating a Cargo profile for that purpose. An alternative strategy is to create a profile for public releases. The 
+If your company has a quality assurance step before any public builds are made, or wishes to create, consider creating a Cargo profile for that purpose. The cargo-dist project recommends using the name `dist` for this purpose.
 
-If you're creating a version of your library for public consumption, and your code isn't open source, then you may wish to create a dedicated build profile for distribution.
+An alternative strategy is to create a profile for *internal* releases. I recommend this approach as it maintains the original intent of the release profile. Using what people already know means that it's less likely that the incorrect build will be shipped.
 
-```toml
-# dist - intended for public distribution
-# 
-# This profile produces a very fast executable, at the cost of
-# significantly slower compilation speed and increased memory
-# requirements.
-[profile.dist]
-inherits = "release"
-debug = false
-codegen-units = 1
-lto = true
+#### Link-time optimization (LTO)
+
+LTO is generally a good thing. It is likely to produce builds that run more efficiently. However, it does impose a significant compile-time cost. You'll need a computer with sufficient memory to maintain all of the symbol tables at compile-time.
+
+```
+lto = 1
 ```
 
-> Note: the `cargo-dist` command a
+Cargo cannot provide cross-language LTO, that is, optimization over the FFI boundary, by itself. For this, you'll need to provide a compiler plugin to LLVM via environment variables.
 
 Cargo profile. Consider LTO. For gather data, you need profiling and benchmarks.
 
+# Techniques for stainless Rust
 
-
-Information hiding
+## Information hiding
 
 Using a `pub` field means that you've exposed your internal representation and have committed to maintaining its presence until the next major version.
 
-Traits and preludes
+## Traits and preludes
 
 One of the biggest issues that you'll face as a library author, especially with beginning Rust programmers, is that they'll forget to import a trait. Then methods won't be available on types and the error messages will be cryptic. Users will copy + paste from the HTML documentation, but the examples in the docs hide the imports.
 
 There are a few ways around this. One is to use fewer traits. Another is to use a prelude, so that it's harder to forget traits. A third, less obvious, method is to ensure that the `use` statement is at the top of the code examples. `rustup`
 
-
-Feature gates. 
+## Feature gates
 
 Feature flags can be used by your users to decrease the compile times, because they only pay the cost of what they use. Use modules as the barrier to keep your internal code complexity manageable. 
 
 A good example of this approach is the `tokio` crate, which provides many features of almost every aspect. It also includes a `full` feature, which is especially useful for when people are starting out and/or following a tutorial.
 
 Most features should be enabled by default. When users are starting out, they don't have enough information to understand which features to opt into.  It's better to give them the full ensemble, then provide them with the ability to whittle that down.
+
 ## Tip: use dependencies
 
 It's somewhat of a meme that the Rust community uses too many libraries. However, be wary of suggestions that you have "too many dependencies" as a path to speed up compilation times.
@@ -360,12 +406,14 @@ $ cargo clean && cargo build --release --timings
 
 If your build infrastructure supports it, add "time for clean build" to your metrics.
 
-## Technique: increasing build speed
+## Increasing build speed
 
-The only way to go faster is to do less work.
+There are two ways to make computers go faster. The best way is to do less work. The alternative is to buy faster hardware.
+
 ### Split large crates into pieces
 
-Smaller crates build faster and experience less churn during development. A crate is the "unit of compilation" within the Rust ecosystem, meaning that crates can be built independently in parallel. When you're making code changes, you typically are making changes to one place. Therefore, Rust won't need to recompile the whole project.   
+Smaller crates build faster and experience less churn during development. A crate is the "unit of compilation" within the Rust ecosystem, meaning that crates can be built independently in parallel. When you're making code changes, you typically are making changes to one place. Therefore, Rust won't need to recompile the whole project.
+
 ### Use a single version of each dependency
 
 Check whether you're building multiple versions of a library in your dependency graph.
@@ -375,7 +423,9 @@ Check whether you're building multiple versions of a library in your dependency 
 Upgrading upstream might require sending a PR upstream for them to upgrade their version in their code. If they're slow at approving it, you can 
 [override upstream ](https://doc.rust-lang.org/nightly/cargo/reference/overriding-dependencies.html#the-patch-section) by using the `[patch]` functionality within Cargo to replace a version of upstream with a version that you control. The ["Testing a bugfix" section](https://doc.rust-lang.org/nightly/cargo/reference/overriding-dependencies.html#testing-a-bugfix) of the Overriding Dependencies chapter of the Cargo Book details this process.
 
-Sometimes, you may pin an old version of a dependency to support compilation with an older version of Rust. 
+Sometimes, you may pin an old version of a dependency to support compilation with an older version of Rust.
+
+Remember that you can provide dependencies at the workspace level to ensure that your workspace members all use the same version without needing to do additional work.
 
 ### Add feature flags to your library
 
@@ -394,7 +444,7 @@ You have a few strategies to to mitigate this.
 
 The easiest is to annotate your function with `#[doc(hidden)]`. This'll make it hard to find.
 
-Something that's might be worthwhile to do is to mark the function as deprecated. That will generate a loud warning whenever someone compiles their code. Sadly, the compiler will also nag you.
+Something that's available to you, but is unlikely to be worthwhile, is to mark the function as deprecated. That will generate a loud warning whenever someone compiles their code with your internal-yet-unfortunately-public API. Sadly, the compiler will also nag you when you run your test suite. Most importantly though,  `cargo-semver-checks` will consider this part of your public API, even though it's marked as `#[doc(hidden)]`, and you'll break semantic versioning. 
 
 A related option is to mark the function as `unsafe`. This generates a similar anxiety-laden 
 
@@ -429,6 +479,94 @@ pub unsafe fn _clear_cache() {
 ```
 ref: https://github.com/anderslanglands/ustr/blob/10a780a01196df9fa9d240bb0dcb14aae364a416/src/lib.rs#L416C22-L429C22
 
+You should read the [Definitive Guide to Sealed Traits in Rust](https://predr.ag/blog/definitive-guide-to-sealed-traits-in-rust/).
+
+## Technique: compensate for the lack of atomic types in the target platform
+
+If you require atomic operations, but you are compiling for a target without them, then you need to emulate them within software. As seen by the [log crate](https://github.com/rust-lang/log/blob/c879b011a8ac662545adf9484d9a668ebcf9b814/src/lib.rs#L404), you can make use of  `std::cell:Cell`.
+
+One thing that you may wish to confirm before copying the code below is whether you should implement `Sync` for the type. The in-line comment does so, but with am assumption: "Any platform without atomics is unlikely to have multiple cores, so writing via Cell will not be a race condition."
+
+Code:
+
+```rust
+#[cfg(target_has_atomic = "ptr")]
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+#[cfg(not(target_has_atomic = "ptr"))]
+use std::cell::Cell;
+#[cfg(not(target_has_atomic = "ptr"))]
+use std::sync::atomic::Ordering;
+
+#[cfg(not(target_has_atomic = "ptr"))]
+struct AtomicUsize {
+    v: Cell<usize>,
+}
+
+#[cfg(not(target_has_atomic = "ptr"))]
+impl AtomicUsize {
+    const fn new(v: usize) -> AtomicUsize {
+        AtomicUsize { v: Cell::new(v) }
+    }
+
+    fn load(&self, _order: Ordering) -> usize {
+        self.v.get()
+    }
+
+    fn store(&self, val: usize, _order: Ordering) {
+        self.v.set(val)
+    }
+
+    #[cfg(target_has_atomic = "ptr")]
+    fn compare_exchange(
+        &self,
+        current: usize,
+        new: usize,
+        _success: Ordering,
+        _failure: Ordering,
+    ) -> Result<usize, usize> {
+        let prev = self.v.get();
+        if current == prev {
+            self.v.set(new);
+        }
+        Ok(prev)
+    }
+}
+
+// Any platform without atomics is unlikely to have multiple cores, so
+// writing via Cell will not be a race condition.
+#[cfg(not(target_has_atomic = "ptr"))]
+unsafe impl Sync for AtomicUsize {}
+```
+
+## Supporting older compilers
+
+You may find yourself wanting to support older compilers, but make use of features from new compilers when they're available. The `rustversion` crate provides this, through conditional compilation.
+
+As an example, it provides the ability to mark functions as `const` where this is supported by the compiler.
+
+```rust
+use std::time::Duration;
+
+#[rustversion::attr(since(1.32), const)]
+pub fn duration_as_days(dur: Duration) -> u64 {
+    dur.as_secs() / 60 / 60 / 24
+}
+```
+
+With macros expanded, you can see that the function's definition has been rewritten:
+
+```rust
+$ cargo +nightly rustc --profile=check --lib -- -Zunpretty=expanded
+// (prelude omitted)
+use std::time::Duration;
+
+pub const fn duration_as_days(dur: Duration) -> u64 {
+    dur.as_secs() / 60 / 60 / 24
+}
+```
+
+
 # Projects
 
 ## rand_xorshift
@@ -461,6 +599,7 @@ Project
 # code style
 
 The advice in this section is advice provided by an opinonated software developer. You're very welcome to disagree and select your own principles.
+
 ## Be consistent with the standard library
 
 A strong guiding principle is that you should seek to follow established patterns, rather than invent your own. Following established norms decreases cognitive load, increases your users' productivity, and increases retention. You're far less likely to get people implementing their own libraries if yours works well.
@@ -483,10 +622,7 @@ In Rust, you would generally be better off creating a concrete type that contain
 
 ### Avoid name stuttering
 
-
-
-This incud
-
+Rust's standard library has a tendency of  This incud
 
 ### Avoid "params structs"
 
@@ -494,7 +630,7 @@ This incud
 
 ### Use standard formatting
 
-Use `rustfmt`
+Use `rustfmt`.
 
 
 ### release hygiene
@@ -505,15 +641,15 @@ Use `rustfmt`
 
 
 
-ci/cd.
+## Continuous integration
 
 semantic versioning breakages - `cargo semver-checks`. 
 
 use automation where possible, e.g. `cargo release` or `release-plz`, and checklists where that's impossible.
 
-Make your code auditable. The hash of git tag of your release should match the hash of what's uploaded to crates.io.
+Make your code auditable. The hash of git tag of your release should match the hash of what's uploaded to crates.io. This implies avoiding `cargo release --allow-dirty`. To provide additional assurance, you should also ensure that your release artifacts are built using a public toolchain, e.g. on GitHub Actions or similar. Once support for [Github's Attestations](https://github.blog/2024-05-02-introducing-artifact-attestations-now-in-public-beta/) becomes generally available, you should move to this also. 
 
-if your code accepts input from the outside world, you should include fuzz testing.
+If your code accepts input from the outside world, you should include fuzz testing.
 
 ## reducing the number of dependencies
 
@@ -838,5 +974,9 @@ Interesting that they decide to use 2 spaces for indentation. Perhaps it's creat
 |          |                                                |
 |          |                                                |
 
+# Acknowledgements
 
+Thank you to those who have supported this material's development
 
+- Financial supporters of the the Rust Foundation Fellowship
+- Predrag Gruevski for many comments and suggestions
